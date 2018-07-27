@@ -1,7 +1,12 @@
 package android.fiot.android_ble;
 
 import android.bluetooth.BluetoothDevice;
+import android.fiot.android_ble.model.Light;
+import android.fiot.android_ble.model.Sound;
+import android.fiot.android_ble.model.Time;
+import android.fiot.android_ble.utils.ParseObjectToBytes;
 import android.os.Bundle;
+import android.os.ParcelUuid;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.DefaultItemAnimator;
 import android.support.v7.widget.LinearLayoutManager;
@@ -20,18 +25,15 @@ import com.bluetooth.le.FioTBluetoothService;
 import com.bluetooth.le.FioTManager;
 import com.bluetooth.le.FioTScanManager;
 import com.bluetooth.le.FiotBluetoothInit;
-import com.bluetooth.le.exception.BluetoothOffException;
-import com.bluetooth.le.exception.CharacteristicNotFound;
 import com.bluetooth.le.exception.NotFromActivity;
 import com.bluetooth.le.exception.NotSupportBleException;
 import com.bluetooth.le.scanner.ScanFilter;
 import com.bluetooth.le.scanner.ScanResult;
-import com.bluetooth.le.utils.BluetoothUuid;
 import com.bluetooth.le.utils.ByteUtils;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements FiotBluetoothInit.FiotBluetoothInitListener {
     private static final String TAG = "MainActivity";
@@ -42,11 +44,17 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
     public static List<FioTBluetoothDevice> devicesList = new ArrayList<>();
     private FioTScanManager scanManager;
     private FioTManager manager;
+    private BluetoothController bluetoothController;
 
-    public static final String SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb";
+   // public static final String SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb";
     public static final String CH1_UUID = "00002a37-0000-1000-8000-00805f9b34fb";
     public static final String CH2_UUID = "00002a38-0000-1000-8000-00805f9b34fb";
     public static final String CH3_UUID = "00002a39-0000-1000-8000-00805f9b34fb";
+
+    public static final String SERVICE_UUID = "FFAAFB00-FFAA-FFAA-FFAA-FFFFFFFFFFFF";
+    public static final String CH_UUID_LIGHT = "FFAAFB04-FFAA-FFAA-FFAA-FFFFFFFFFFFF";
+    public static final String CH_UUID_SOUND = "FFAAFB05-FFAA-FFAA-FFAA-FFFFFFFFFFFF";
+    private static final String CH_UUID_TIME = "FFAAFB08-FFAA-FFAA-FFAA-FFFFFFFFFFFF";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,9 +121,9 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
 
     private void startScan() {
         devicesList.clear();
-
         List<ScanFilter> filters = new ArrayList<>();
-        filters.add(new ScanFilter.Builder().setDeviceName("Heart Rate").build());
+        filters.add(new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(SERVICE_UUID)).build());
+//        filters.add(new ScanFilter.Builder().setDeviceName("").build());
         try {
             scanManager.start(filters, null, new FioTScanManager.ScanManagerListener() {
                 @Override
@@ -123,7 +131,9 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            devicesList.add(device);
+                            if (contains(devicesList, device.getBluetoothDevice().getAddress()) == false) {
+                                devicesList.add(device);
+                            }
                             dAdapter.notifyDataSetChanged();
                         }
                     });
@@ -137,6 +147,15 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    boolean contains(List<FioTBluetoothDevice> list, String add) {
+        for (FioTBluetoothDevice item : list) {
+            if (item.getBluetoothDevice().getAddress().equals(add)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void showDevices(List<BLEDevice> devicesList) {
@@ -197,9 +216,14 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
 
                         ArrayList<FioTBluetoothService> services = new ArrayList<FioTBluetoothService>();
                         ArrayList<FioTBluetoothCharacteristic> characteristics2 = new ArrayList<FioTBluetoothCharacteristic>();
-                        characteristics2.add(new FioTBluetoothCharacteristic(CH1_UUID, true));
-                        characteristics2.add(new FioTBluetoothCharacteristic(CH2_UUID, false));
-                        characteristics2.add(new FioTBluetoothCharacteristic(CH3_UUID, false));
+//                        characteristics2.add(new FioTBluetoothCharacteristic(CH1_UUID, true));
+//                        services.add(new FioTBluetoothService(SERVICE_UUID, characteristics2));
+                        final FioTBluetoothCharacteristic chTime = new FioTBluetoothCharacteristic(CH_UUID_TIME, true);
+                        final FioTBluetoothCharacteristic chLight = new FioTBluetoothCharacteristic(CH_UUID_LIGHT, true);
+                        final FioTBluetoothCharacteristic chSound = new FioTBluetoothCharacteristic(CH_UUID_SOUND, true);
+                        characteristics2.add(chTime);
+                        characteristics2.add(chLight);
+                        characteristics2.add(chSound);
                         services.add(new FioTBluetoothService(SERVICE_UUID, characteristics2));
 
                         manager = new FioTManager(MainActivity.this,
@@ -216,23 +240,42 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
 
                             @Override
                             public void onConnected() {
-                                try {
-                                    for (int i = 0; i < 100; i++) {
-                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD!".getBytes());
-                                        manager.read(CH2_UUID);
-                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 1".getBytes());
-                                        manager.read(CH2_UUID);
-                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 2".getBytes());
-                                        manager.read(CH2_UUID);
-                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 3".getBytes());
-                                        manager.read(CH2_UUID);
-                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 4".getBytes());
-                                        manager.read(CH2_UUID);
-                                    }
+//                                try {
+//                                    for (int i = 0; i < 100; i++) {
+//                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD!".getBytes());
+//                                        manager.read(CH2_UUID);
+//                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 1".getBytes());
+//                                        manager.read(CH2_UUID);
+//                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 2".getBytes());
+//                                        manager.read(CH2_UUID);
+//                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 3".getBytes());
+//                                        manager.read(CH2_UUID);
+//                                        manager.writeWithQueue(CH3_UUID, "HELLO WORLD! 4".getBytes());
+//                                        manager.read(CH2_UUID);
+//                                        manager.writeWithQueue(CH_UUID, "HELLO WORLD! 2".getBytes());
+//                                        manager.read(CH_UUID);
+//                                    }
+                                    bluetoothController = new BluetoothController();
 
-                                } catch (CharacteristicNotFound characteristicNotFound) {
-                                    characteristicNotFound.printStackTrace();
-                                }
+                                    Time mTime = new Time(System.currentTimeMillis()/1000,0);
+                                    Sound mSound = new Sound(0x02, 0x01, true);
+                                    Light mLight = new Light(0x05, 0x01, 0x01, true);
+
+                                    byte[] data_time = ParseObjectToBytes.parseTimeToBytes(mTime);
+                                    byte[] data_sound = ParseObjectToBytes.parseSoundBytes(mSound);
+                                    byte[] data_light = ParseObjectToBytes.parseLightBytes(mLight);
+
+                                    bluetoothController.setData(manager,chTime, data_time);
+                                    bluetoothController.setData(manager,chLight, data_light);
+                                    bluetoothController.setData(manager,chSound, data_sound);
+
+                                    byte[] data = bluetoothController.getData(manager, chLight);
+
+//                                    manager.read(CH_UUID_TIME);
+
+//                                } catch (CharacteristicNotFound characteristicNotFound) {
+//                                    characteristicNotFound.printStackTrace();
+//                                }
                             }
 
                             @Override
@@ -293,4 +336,11 @@ public class MainActivity extends AppCompatActivity implements FiotBluetoothInit
 
 
     }
+
+    public static byte[] longToBytes(long x) {
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.putLong(x);
+        return buffer.array();
+    }
+
 }

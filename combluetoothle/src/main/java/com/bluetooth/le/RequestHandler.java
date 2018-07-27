@@ -45,6 +45,7 @@ public class RequestHandler {
 
         Request request = requestQueue.element();
         RequestData requestData = request.getData();
+        Log.d(TAG, "Data of RequestData "+request.getData().toString());
         switch (request.getCmd()) {
             case READ:
                 le.requestCharacteristicValue(requestData.getCharacteristic());
